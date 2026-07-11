@@ -11,7 +11,7 @@ public class Koneksi {
     public static Connection configDB() throws SQLException {
         try {
             if (mysqlconfig == null || mysqlconfig.isClosed()) {
-                String url = "jdbc:mysql://localhost:3306/secondbrainjava";
+                String url = "jdbc:mysql://localhost:3306/secondbrainjava-v2";
                 String user = "root";
                 String pass = "";
 

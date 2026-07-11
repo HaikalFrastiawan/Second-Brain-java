@@ -1,0 +1,12 @@
+# ======= 1. ABSTRAKSI KREDENSIAL / KONEKSI DATABASE =======
+# Menyembunyikan file koneksi database asli yang berisi pass/user
+src/config/Koneksi.java
+
+# ======= 2. JAVA COMPILED FILES =======
+# Mengabaikan hasil compile java (agar tidak mengotori repositori)
+*.class
+bin/
+
+# ======= 3. IDE CONFIGURATIONS =======
+# Mengabaikan konfigurasi lokal editor VS Code Anda
+.vscode/
