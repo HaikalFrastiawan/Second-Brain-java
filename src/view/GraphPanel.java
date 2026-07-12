@@ -419,30 +419,58 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
     }
 
     private void aksiExportMarkdown() {
+        // 1. Minta pengguna memilih FOLDER tujuan
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Simpan Weekly Review");
-        fileChooser.setSelectedFile(new File("Weekly_Review.md"));
+        fileChooser.setDialogTitle("Pilih Folder untuk Menyimpan Weekly Review");
+        fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        fileChooser.setAcceptAllFileFilterUsed(false); // Hanya bisa pilih folder
 
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            File file = fileChooser.getSelectedFile();
-            List<Catatan> semuaCatatan = repo.getAllCatatan(); // Ambil data dari repo
+            File folderInduk = fileChooser.getSelectedFile();
 
-            try (FileWriter writer = new FileWriter(file)) {
-                writer.write("# 🧠 Weekly Review Summary - Second Brain\n\n");
-                writer.write("Dibuat otomatis pada tanggal: " + java.time.LocalDate.now() + "\n\n---\n\n");
+            // 2. Buat nama folder baru berdasarkan rentang tanggal 7 hari terakhir
+            java.time.LocalDate tglAkhir = java.time.LocalDate.now();
+            java.time.LocalDate tglAwal = tglAkhir.minusDays(6);
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy");
+            String namaFolderReview = "Review " + tglAwal.format(formatter) + " - " + tglAkhir.format(formatter);
 
-                for (Catatan c : semuaCatatan) {
-                    writer.write("## 📝 " + c.getJudul() + "\n");
-                    writer.write("* **Kategori:** `" + (c.getKategori().isEmpty() ? "Uncategorized" : c.getKategori()) + "`\n");
-                    writer.write("* **Tanggal:** " + c.getTanggal() + "\n\n");
-                    writer.write("### Isi Catatan:\n" + c.getKonten() + "\n\n");
-                    writer.write("---\n\n");
-                }
-
-                JOptionPane.showMessageDialog(this, "Berhasil mengeksport file Markdown ke:\n" + file.getAbsolutePath());
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Gagal mengeksport file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            File folderTujuan = new File(folderInduk, namaFolderReview);
+            if (!folderTujuan.exists() && !folderTujuan.mkdirs()) {
+                JOptionPane.showMessageDialog(this, "Gagal membuat folder review:\n" + folderTujuan.getAbsolutePath(), "Error", JOptionPane.ERROR_MESSAGE);
+                return;
             }
+
+            // 3. Ambil semua catatan dan ekspor satu per satu ke dalam folder tersebut
+            List<Catatan> semuaCatatan = repo.getAllCatatan();
+            int fileBerhasil = 0;
+            for (Catatan c : semuaCatatan) {
+                // Sanitasi judul agar menjadi nama file yang valid
+                String namaFile = c.getJudul().replaceAll("[\\\\/:*?\"<>|]", "_") + ".md";
+                File fileOutput = new File(folderTujuan, namaFile);
+
+                try (FileWriter writer = new FileWriter(fileOutput)) {
+                    String kategori = (c.getKategori() == null || c.getKategori().trim().isEmpty()) ? "Uncategorized" : c.getKategori();
+
+                    writer.write("# 📝 " + c.getJudul() + "\n\n");
+                    writer.write("---\n\n");
+                    writer.write("- **Kategori:** `" + kategori + "`\n");
+                    writer.write("- **Tanggal Dibuat:** " + c.getTanggal() + "\n\n");
+                    writer.write("## Isi Catatan\n\n");
+                    writer.write(c.getKonten() + "\n");
+
+                    fileBerhasil++;
+                } catch (IOException ex) {
+                    // Jika satu file gagal, tampilkan pesan dan lanjutkan ke file berikutnya
+                    JOptionPane.showMessageDialog(this, "Gagal mengekspor file: " + namaFile + "\nError: " + ex.getMessage(), "Error", JOptionPane.WARNING_MESSAGE);
+                }
+            }
+
+            // 4. Tampilkan pesan konfirmasi di akhir
+            JOptionPane.showMessageDialog(this,
+                fileBerhasil + " dari " + semuaCatatan.size() + " catatan berhasil diekspor ke folder:\n" + folderTujuan.getAbsolutePath(),
+                "Export Selesai",
+                JOptionPane.INFORMATION_MESSAGE
+            );
         }
     }
 
