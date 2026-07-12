@@ -24,16 +24,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.Timer;
 import javax.swing.JPopupMenu;
-import javax.swing.JMenuItem;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 
 import model.Catatan;
 import repository.CatatanRepository;
@@ -584,104 +583,148 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
         g2d.drawString(node.title, (int)node.x - 15, (int)node.y + nodeDiameter + 10);
     }
 
-    private void initMouseListeners() {
-        addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                lastMousePosition = e.getPoint();
-                // FITUR BARU: Cek pemicu popup (klik kanan)
-                if (e.isPopupTrigger()) {
-                    showContextMenu(e);
-                }
+private GraphNode nodeSedangDiedit = null;
+
+private void initMouseListeners() {
+    addMouseListener(new MouseAdapter() {
+        @Override
+        public void mousePressed(MouseEvent e) {
+            lastMousePosition = e.getPoint();
+            if (e.isPopupTrigger()) {
+                showContextMenu(e);
+                return;
             }
 
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                // Cek pemicu popup saat mouse dilepas (best practice untuk cross-platform)
-                if (e.isPopupTrigger()) {
-                    showContextMenu(e);
+            // --- FITUR GESER NODE: Cari tahu apakah klik jatuh di atas sebuah Node ---
+            int cx = getWidth() / 2;
+            int cy = getHeight() / 2;
+
+            java.awt.geom.AffineTransform tx = new java.awt.geom.AffineTransform();
+            tx.translate(cx, cy);
+            tx.scale(zoomFactor, zoomFactor);
+            tx.translate(-cx + offsetX, -cy + offsetY);
+
+            java.awt.geom.Point2D dstTransform = new java.awt.geom.Point2D.Double();
+            try {
+                tx.inverseTransform(e.getPoint(), dstTransform);
+                double clickedX = dstTransform.getX();
+                double clickedY = dstTransform.getY();
+                double klikToleransi = 18.0;
+
+                nodeSedangDiedit = null; // reset sebelum mencari
+                for (GraphNode node : graphNodes) {
+                    double dx = clickedX - (node.x + 4);
+                    double dy = clickedY - (node.y + 4);
+                    if (Math.sqrt(dx * dx + dy * dy) <= klikToleransi) {
+                        nodeSedangDiedit = node; // Node berhasil dikunci untuk diseret!
+                        break;
+                    }
                 }
+            } catch (Exception ex) {
+                ex.printStackTrace();
             }
+        }
 
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                int cx = getWidth() / 2;
-                int cy = getHeight() / 2;
-
-                // Jangan proses klik biasa jika itu adalah klik kanan
-                if (SwingUtilities.isRightMouseButton(e)) return;
-
-                java.awt.geom.AffineTransform tx = new java.awt.geom.AffineTransform();
-                tx.translate(cx, cy);
-                tx.scale(zoomFactor, zoomFactor);
-                tx.translate(-cx + offsetX, -cy + offsetY);
-
-                java.awt.Point srcTransform = e.getPoint();
-                java.awt.geom.Point2D dstTransform = new java.awt.geom.Point2D.Double();
-
+        @Override
+        public void mouseReleased(MouseEvent e) {
+            if (e.isPopupTrigger()) {
+                showContextMenu(e);
+            }
+            
+            // --- FITUR GESER NODE: Saat lepas klik, simpan koordinat baru ke MySQL ---
+           if (nodeSedangDiedit != null) {
                 try {
-                    tx.inverseTransform(srcTransform, dstTransform);
-
-                    double clickedX = dstTransform.getX();
-                    double clickedY = dstTransform.getY();
-
-                    GraphNode nodeTerpilih = null;
-                    // Toleransi area klik lingkaran node (radius 18px)
-                    double klikToleransi = 18.0;
-
-                    for (GraphNode node : graphNodes) {
-                        // Titik tengah node (ditambah 4 karena di paintComponent digambar dengan offset +4)
-                        double dx = clickedX - (node.x + 4);
-                        double dy = clickedY - (node.y + 4);
-                        double distance = Math.sqrt(dx * dx + dy * dy);
-
-                        if (distance <= klikToleransi) {
-                            nodeTerpilih = node;
-                            break;
-                        }
-                    }
-
-                    if (nodeTerpilih != null) {
-                        // Lempar ID node yang diklik ke MainFrame agar tabel & form terisi, lalu node menyala
-                        mainFrame.setSelectedId(nodeTerpilih.id);
-                    } else {
-                        // Klik di area kosong, lepas seleksi
-                        mainFrame.setSelectedId(null);
-                    }
-
-                    // Paksa gambar ulang layar agar efek menyala langsung aktif
-                    repaint();
-
-                } catch (java.awt.geom.NoninvertibleTransformException ex) {
-                    ex.printStackTrace();
+                    // LANGSUNG KIRIM nodeSedangDiedit.id (tanpa di-parse ke int)
+                    repo.updateKoordinat(nodeSedangDiedit.id, nodeSedangDiedit.x, nodeSedangDiedit.y);
+                    System.out.println("Menyimpan posisi node ID: " + nodeSedangDiedit.id);
+                } catch (Exception ex) {
+                    System.err.println("Gagal auto-save koordinat ke DB: " + ex.getMessage());
                 }
+                nodeSedangDiedit = null; // lepas kuncian node
             }
-        });
+        }
 
-        addMouseMotionListener(new MouseMotionAdapter() {
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                if (lastMousePosition != null) {
-                    int dx = e.getX() - lastMousePosition.x;
-                    int dy = e.getY() - lastMousePosition.y;
+        @Override
+        public void mouseClicked(MouseEvent e) {
+            int cx = getWidth() / 2;
+            int cy = getHeight() / 2;
+
+            if (SwingUtilities.isRightMouseButton(e)) return;
+
+            java.awt.geom.AffineTransform tx = new java.awt.geom.AffineTransform();
+            tx.translate(cx, cy);
+            tx.scale(zoomFactor, zoomFactor);
+            tx.translate(-cx + offsetX, -cy + offsetY);
+
+            java.awt.Point srcTransform = e.getPoint();
+            java.awt.geom.Point2D dstTransform = new java.awt.geom.Point2D.Double();
+
+            try {
+                tx.inverseTransform(srcTransform, dstTransform);
+
+                double clickedX = dstTransform.getX();
+                double clickedY = dstTransform.getY();
+
+                GraphNode nodeTerpilih = null;
+                double klikToleransi = 18.0;
+
+                for (GraphNode node : graphNodes) {
+                    double dx = clickedX - (node.x + 4);
+                    double dy = clickedY - (node.y + 4);
+                    double distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance <= klikToleransi) {
+                        nodeTerpilih = node;
+                        break;
+                    }
+                }
+
+                if (nodeTerpilih != null) {
+                    mainFrame.setSelectedId(nodeTerpilih.id);
+                } else {
+                    mainFrame.setSelectedId(null);
+                }
+
+                repaint();
+
+            } catch (java.awt.geom.NoninvertibleTransformException ex) {
+                ex.printStackTrace();
+            }
+        }
+    });
+
+    addMouseMotionListener(new MouseMotionAdapter() {
+        @Override
+        public void mouseDragged(MouseEvent e) {
+            if (lastMousePosition != null) {
+                int dx = e.getX() - lastMousePosition.x;
+                int dy = e.getY() - lastMousePosition.y;
+
+                if (nodeSedangDiedit != null) {
+                    // A. JIKA KLIK DI ATAS NODE: Geser nodenya saja
+                    nodeSedangDiedit.x += dx / zoomFactor;
+                    nodeSedangDiedit.y += dy / zoomFactor;
+                } else {
+                    // B. JIKA KLIK DI AREA KOSONG: Geser seluruh background/papan
                     offsetX += dx / zoomFactor;
                     offsetY += dy / zoomFactor;
-                    lastMousePosition = e.getPoint();
-                    repaint();
                 }
-            }
-        });
 
-        addMouseWheelListener(e -> {
-            if (e.getWheelRotation() < 0) {
-                zoomFactor = Math.min(3.0, zoomFactor * 1.1);
-            } else {
-                zoomFactor = Math.max(0.3, zoomFactor / 1.1);
+                lastMousePosition = e.getPoint();
+                repaint();
             }
-            repaint();
-        });
-    }
+        }
+    });
 
+    addMouseWheelListener(e -> {
+        if (e.getWheelRotation() < 0) {
+            zoomFactor = Math.min(3.0, zoomFactor * 1.1);
+        } else {
+            zoomFactor = Math.max(0.3, zoomFactor / 1.1);
+        }
+        repaint();
+    });
+}
     /**
      * FITUR BARU: Menampilkan menu konteks jika klik kanan dilakukan di area kosong.
      */

@@ -14,7 +14,10 @@ import java.awt.event.FocusEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.sql.SQLException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
+import java.util.UUID;
 
 import javax.swing.*;
 import java.awt.FlowLayout;
@@ -40,9 +43,13 @@ import com.vladsch.flexmark.html.HtmlRenderer;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.data.MutableDataSet;
 import com.vladsch.flexmark.util.ast.Node;
-
+import command.Command;
+import command.CreateNoteCommand;
+import command.UpdateNoteCommand;
+import command.DeleteNoteCommand;
 import model.Catatan;
 import repository.CatatanRepository;
+
 
 public class MainFrame extends JFrame {
 
@@ -58,6 +65,12 @@ public class MainFrame extends JFrame {
     private RoundedButton btnSimpan;
     private RoundedButton btnHapus;
     private RoundedButton btnClear;
+    private RoundedButton btnUndo;
+    private RoundedButton btnRedo;
+    
+    // FITUR BARU: Untuk Undo/Redo
+    private Deque<Command> undoStack = new ArrayDeque<>();
+    private Deque<Command> redoStack = new ArrayDeque<>();
 
     // FITUR BARU: Untuk animasi slide panel
     private JPanel panelKiri;
@@ -190,6 +203,14 @@ public class MainFrame extends JFrame {
         btnHapus = new RoundedButton("Hapus");
         btnHapus.setBackground(ACCENT_RED);
 
+        // FITUR BARU: Tombol Undo/Redo
+        btnUndo = new RoundedButton("↩ Undo");
+        btnUndo.setBackground(BG_SURFACE);
+        btnUndo.setEnabled(false);
+        btnRedo = new RoundedButton("↪ Redo");
+        btnRedo.setBackground(BG_SURFACE);
+        btnRedo.setEnabled(false);
+
         // --- Kustomisasi Tabel Futuristik ---
         tabelCatatan.setBackground(BG_MAIN);
         tabelCatatan.setForeground(TEXT_MAIN);
@@ -246,9 +267,18 @@ public class MainFrame extends JFrame {
         gbc.insets = new java.awt.Insets(0, 4, 15, 4);
         panelKiri.add(lblApp, gbc);
 
+        // Panel Undo/Redo
+        gbc.gridy = 1;
+        gbc.insets = new java.awt.Insets(0, 4, 10, 4);
+        JPanel panelUndoRedo = new JPanel(new GridLayout(1, 2, 10, 0));
+        panelUndoRedo.setOpaque(false);
+        panelUndoRedo.add(btnUndo);
+        panelUndoRedo.add(btnRedo);
+        panelKiri.add(panelUndoRedo, gbc);
+
         // Input Cari
         gbc.insets = new java.awt.Insets(6, 4, 6, 4);
-        gbc.gridy = 1;
+        gbc.gridy = 2;
         gbc.gridwidth = 1;
         gbc.weightx = 0.2;
         JLabel lblCari = new JLabel("Cari:");
@@ -260,7 +290,7 @@ public class MainFrame extends JFrame {
 
         // JScrollPane untuk Tabel
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.gridwidth = 2;
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
@@ -272,7 +302,7 @@ public class MainFrame extends JFrame {
         // Label & Input Judul
         gbc.weighty = 0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.gridy = 3;
+        gbc.gridy = 4;
         gbc.gridwidth = 1;
         gbc.weightx = 0.2;
         JLabel lblJudul = new JLabel("Judul:");
@@ -284,7 +314,7 @@ public class MainFrame extends JFrame {
 
         // Label & Input Kategori
         gbc.gridx = 0;
-        gbc.gridy = 4;
+        gbc.gridy = 5;
         gbc.weightx = 0.2;
         JLabel lblKategori = new JLabel("Kategori:");
         lblKategori.setForeground(TEXT_MUTED);
@@ -295,7 +325,7 @@ public class MainFrame extends JFrame {
 
         // Area Konten / Isi Catatan
         gbc.gridx = 0;
-        gbc.gridy = 5;
+        gbc.gridy = 6;
         gbc.gridwidth = 2;
         gbc.weighty = 0.8;
         gbc.fill = GridBagConstraints.BOTH;
@@ -304,7 +334,7 @@ public class MainFrame extends JFrame {
         // Barisan Tombol Aksi di Bawah
         gbc.weighty = 0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.gridy = 6;
+        gbc.gridy = 7;
         gbc.gridwidth = 2;
         JPanel panelTombol = new JPanel(new GridLayout(1, 3, 10, 0));
         panelTombol.setOpaque(false); // Buat transparan
@@ -317,7 +347,7 @@ public class MainFrame extends JFrame {
         // Pindahkan penambahan tabKonten ke sini setelah panelTombol
         // agar referensi 'defaultBorder' valid.
         gbc.gridx = 0;
-        gbc.gridy = 5;
+        gbc.gridy = 6;
         gbc.gridwidth = 2;
         gbc.weighty = 0.8;
         gbc.fill = GridBagConstraints.BOTH;
@@ -374,13 +404,24 @@ public class MainFrame extends JFrame {
 
             try {
                 if (selectedId == null) {
-                    repo.simpan(judul, konten, kategori);
+                    // Aksi CREATE
+                   String newId = null;
+                   Catatan catatanBaru = new Catatan(newId, judul, konten, kategori, null, 0, 0); 
+    
+    executeCommand(new CreateNoteCommand(catatanBaru, repo, this));
                 } else {
-                    repo.update(selectedId, judul, konten, kategori);
+                    // Aksi UPDATE
+                    Catatan catatanLama = repo.getCatatanById(selectedId);
+                    if (catatanLama != null) {
+                        Catatan catatanBaru = new Catatan(
+                            selectedId, judul, konten, kategori, catatanLama.getTanggal(),
+                            catatanLama.getKoordinatX(), catatanLama.getKoordinatY()
+                        );
+                        executeCommand(new UpdateNoteCommand(catatanLama, catatanBaru, repo, this));
+                    }
                 }
-                refreshData();
                 bersihkanForm();
-            } catch (SQLException ex) {
+            } catch (Exception ex) {
                 ex.printStackTrace();
             }
         });
@@ -393,12 +434,11 @@ public class MainFrame extends JFrame {
             }
             int opsi = JOptionPane.showConfirmDialog(this, "Hapus catatan ini?", "Konfirmasi", JOptionPane.YES_NO_OPTION);
             if (opsi == JOptionPane.YES_OPTION) {
-                try {
-                    repo.hapus(selectedId);
-                    refreshData();
+                Catatan catatanUntukDihapus = repo.getCatatanById(selectedId);
+                if (catatanUntukDihapus != null) {
+                    // Aksi DELETE
+                    executeCommand(new DeleteNoteCommand(catatanUntukDihapus, repo, this));
                     bersihkanForm();
-                } catch (SQLException ex) {
-                    ex.printStackTrace();
                 }
             }
         });
@@ -445,7 +485,43 @@ public class MainFrame extends JFrame {
                 graphPanel.simpanPosisiNode();
             }
         });
+
+        // FITUR BARU: Event untuk tombol Undo dan Redo
+        btnUndo.addActionListener(e -> {
+            if (!undoStack.isEmpty()) {
+                Command command = undoStack.pop();
+                if (command.undo()) {
+                    redoStack.push(command);
+                    refreshData();
+                }
+            }
+        });
+
+        btnRedo.addActionListener(e -> {
+            if (!redoStack.isEmpty()) {
+                Command command = redoStack.pop();
+                if (command.execute()) {
+                    undoStack.push(command);
+                    refreshData();
+                }
+            }
+        });
     }
+
+    /**
+     * FITUR BARU: Menjalankan sebuah command dan menyimpannya ke undo stack.
+     */
+    private void executeCommand(Command command) {
+        if (command.execute()) {
+            undoStack.push(command);
+            redoStack.clear(); // Aksi baru akan menghapus histori redo
+            refreshData();
+            updateUndoRedoButtons();
+        } else {
+            JOptionPane.showMessageDialog(this, "Aksi gagal dieksekusi.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
 
     /**
      * FITUR BARU: Mengontrol animasi slide-in/slide-out untuk panel kiri.
@@ -481,6 +557,15 @@ public class MainFrame extends JFrame {
         panelKiri.setVisible(true); // Pastikan terlihat selama animasi
         timer.start();
     }
+
+    /**
+     * FITUR BARU: Memperbarui status enabled/disabled tombol Undo/Redo.
+     */
+    private void updateUndoRedoButtons() {
+        btnUndo.setEnabled(!undoStack.isEmpty());
+        btnRedo.setEnabled(!redoStack.isEmpty());
+    }
+
 
     // ==========================================
     //   PERBAIKAN UTAMA: SISTEM SINKRONISASI 2 ARAH
@@ -568,5 +653,8 @@ public class MainFrame extends JFrame {
         if (graphPanel != null) {
             graphPanel.SinkronkanNodes(list);
         }
+
+        // Perbarui status tombol undo/redo setiap kali data di-refresh
+        updateUndoRedoButtons();
     }
 }

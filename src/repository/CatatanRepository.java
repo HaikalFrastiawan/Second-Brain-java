@@ -80,23 +80,28 @@ public class CatatanRepository {
         return null;
     }
 
-    public boolean simpan(String judul, String konten, String kategori) throws SQLException {
-        // CURDATE() untuk mendapatkan tanggal hari ini secara otomatis
-        String sql = "INSERT INTO catatan (judul, konten, kategori, tanggal_dibuat, koordinat_x, koordinat_y) VALUES (?, ?, ?, CURDATE(), ?, ?)";
+    /**
+     * Menyimpan objek Catatan lengkap. Penting untuk command pattern.
+     * Mengembalikan objek yang sama jika berhasil.
+     */
+   /**
+     * Menyimpan objek Catatan lengkap. Penting untuk command pattern.
+     * Mengembalikan objek yang sama jika berhasil.
+     */
+    public Catatan simpan(Catatan catatan) throws SQLException {
+        String sql = "INSERT INTO catatan (judul, konten, kategori, koordinat_x, koordinat_y, tanggal_dibuat) VALUES (?, ?, ?, ?, ?, CURDATE())";
+        // try-with-resources tetap dipasang, tapi letakkan throws SQLException di deklarasi method
         try (Connection conn = Koneksi.configDB();
              PreparedStatement pst = conn.prepareStatement(sql)) {
             
-            pst.setString(1, judul);
-            pst.setString(2, konten);
-            pst.setString(3, kategori != null ? kategori.trim() : "");
+            pst.setString(1, catatan.getJudul());
+            pst.setString(2, catatan.getKonten());
+            pst.setString(3, catatan.getKategori() != null ? catatan.getKategori().trim() : "");
+            pst.setInt(4, catatan.getKoordinatX());
+            pst.setInt(5, catatan.getKoordinatY());
             
-            // Generate koordinat acak sebagai fallback posisi mekar
-            int randX = (int) (Math.random() * 300.0) + 30;
-            int randY = (int) (Math.random() * 400.0) + 50;
-            pst.setInt(4, randX);
-            pst.setInt(5, randY);
-            
-            return pst.executeUpdate() > 0;
+            pst.executeUpdate();
+            return catatan; 
         }
     }
 
@@ -115,6 +120,8 @@ public class CatatanRepository {
             return pst.executeUpdate() > 0;
         }
     }
+
+
 
     public boolean hapus(String id) throws SQLException {
         String sql = "DELETE FROM catatan WHERE id_catatan = ?";
