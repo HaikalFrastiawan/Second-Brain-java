@@ -3,6 +3,11 @@
     "java.project.outputPath": "bin",
     "java.project.referencedLibraries": [
         "lib/**/*.jar",
-        "c:\\Users\\ASUS\\Downloads\\mysql-connector-j-9.7.0\\mysql-connector-j-9.7.0\\mysql-connector-j-9.7.0.jar"
-    ]
+        "c:\\Users\\ASUS\\Downloads\\mysql-connector-j-9.7.0\\mysql-connector-j-9.7.0\\mysql-connector-j-9.7.0.jar",
+        "c:\\Users\\ASUS\\Downloads\\flatlaf-3.7.jar",
+        "c:\\Users\\ASUS\\Downloads\\flexmark-all-0.64.8.jar",
+        "c:\\Users\\ASUS\\Downloads\\flexmark-all-0.64.8-lib.jar"
+    ],
+    "vmArgs": "--enable-native-access=ALL-UNNAMED" // <-- TAMBAHKAN BARIS INI
 }
+

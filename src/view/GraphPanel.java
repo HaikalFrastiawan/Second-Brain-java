@@ -1,7 +1,18 @@
 package view;
 
-import java.awt.*;
-import java.awt.event.*;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Point;
+import java.awt.RadialGradientPaint;
+import java.awt.RenderingHints;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.AffineTransform;
 import java.io.File;
 import java.io.FileWriter;
@@ -10,9 +21,24 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.swing.*;
+import java.util.regex.Pattern;
+
+import javax.swing.AbstractAction;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JFileChooser;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.Timer;
+
 import model.Catatan;
 import repository.CatatanRepository;
+
+class Link {
+    String sourceId;
+    String targetId;
+    public Link(String s, String t) { sourceId = s; targetId = t; }
+}
 
 public class GraphPanel extends JPanel {
 
@@ -34,11 +60,22 @@ public class GraphPanel extends JPanel {
     private final double REPEL_FORCE = 700.0; // Gaya tolak-menolak antar node agar tidak bertumpuk
     private final double SPRING_FORCE = 0.035; // Gaya tarik pegas elastis satu kategori
     private final double DAMPING = 0.82;       // Redaman hambatan udara agar gerakan stabil
+    private final int MAX_LINE_DIST = 350;      // Jarak maksimum untuk menggambar garis koneksi
+
+    // Cache untuk data yang sering diakses di paintComponent
+    private Map<String, String> idToCategoryMap = new HashMap<>();
+    private Map<String, String> idToTitleMap = new HashMap<>();
+    private Map<String, String> titleToIdMap = new HashMap<>(); // Untuk parsing link [[Judul]]
+    private Map<String, ArrayList<GraphNode>> categoryGroups = new HashMap<>();
+    private List<Link> explicitLinks = new ArrayList<>(); // FITUR BARU: Untuk link [[...]]
 
     // Constructor bawaan (urutan baru)
     public GraphPanel(CatatanRepository repo, MainFrame mainFrame) {
         this.repo = repo;
         this.mainFrame = mainFrame;
+        // Inisialisasi cache data saat pertama kali dibuat
+        perbaruiCacheData();
+
         setBackground(new Color(10, 10, 18));
         initControls();
         initMouseListeners();
@@ -138,24 +175,85 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
     int cy = getHeight() > 50 ? getHeight() / 2 : 300;
 
     for (Catatan c : catatanList) {
-        GraphNode lama = cariNodeLama(c.getId());
-        if (lama != null) {
-            lama.title = c.getJudul();
-            lama.color = dapatkanWarnaKategori(c.getKategori());
-            nodesBaru.add(lama);
+        GraphNode existingNode = cariNodeLama(c.getId());
+        if (existingNode != null) {
+            existingNode.title = c.getJudul();
+            existingNode.color = dapatkanWarnaKategori(c.getKategori());
+            nodesBaru.add(existingNode);
         } else {
-            // Perbaikan: Gunakan sudut (angle) acak yang distribusinya lebih luas agar memencar
-            double angle = Math.random() * 2.0 * Math.PI;
-            double radius = 100 + (Math.random() * 200); // Radius lingkaran sebaran diperluas
-            double nx = cx + Math.cos(angle) * radius;
-            double ny = cy + Math.sin(angle) * radius;
-            
+            // FITUR BARU: Gunakan koordinat dari DB jika ada, jika tidak, baru buat posisi acak.
+            double nx, ny;
+            if (c.getKoordinatX() > 0 && c.getKoordinatY() > 0) {
+                nx = c.getKoordinatX();
+                ny = c.getKoordinatY();
+            } else {
+                // Fallback: Posisi acak jika koordinat belum ada di DB
+                double angle = Math.random() * 2.0 * Math.PI;
+                double radius = 100 + (Math.random() * 200);
+                nx = cx + Math.cos(angle) * radius;
+                ny = cy + Math.sin(angle) * radius;
+            }
             nodesBaru.add(new GraphNode(c.getId(), c.getJudul(), nx, ny, dapatkanWarnaKategori(c.getKategori())));
         }
     }
     this.graphNodes = nodesBaru;
+    // Perbarui cache setiap kali node disinkronkan
+    perbaruiCacheData();
     repaint();
-}   
+}
+
+    public void simpanPosisiNode() {
+        System.out.println("Menyimpan posisi node...");
+        for (GraphNode node : graphNodes) {
+            try {
+                repo.updateKoordinat(node.id, node.x, node.y);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * Memperbarui cache data dari repository untuk menghindari pemanggilan berulang
+     * di dalam `paintComponent`.
+     */
+    private void perbaruiCacheData() {
+        idToCategoryMap.clear();
+        idToTitleMap.clear();
+        titleToIdMap.clear();
+        categoryGroups.clear();
+        explicitLinks.clear();
+
+        List<Catatan> semuaCatatan = repo.getAllCatatan();
+        for (Catatan c : semuaCatatan) {
+            String kat = (c.getKategori() == null || c.getKategori().trim().isEmpty()) ? "Uncategorized" : c.getKategori();
+            idToCategoryMap.put(c.getId(), kat);
+            idToTitleMap.put(c.getId(), c.getJudul().toLowerCase());
+            titleToIdMap.put(c.getJudul().toLowerCase(), c.getId());
+        }
+
+        // FITUR BARU: Parsing link [[...]] dari konten setiap catatan
+        var linkPattern = Pattern.compile("\\[\\[(.*?)\\]\\]");
+        for (Catatan c : semuaCatatan) {
+            var matcher = linkPattern.matcher(c.getKonten());
+            while (matcher.find()) {
+                String targetTitle = matcher.group(1).toLowerCase().trim();
+                String targetId = titleToIdMap.get(targetTitle);
+                if (targetId != null && !targetId.equals(c.getId())) {
+                    explicitLinks.add(new Link(c.getId(), targetId));
+                }
+            }
+        }
+
+        // Bangun ulang pengelompokan node berdasarkan kategori dari cache
+        // Ini harus dilakukan di sini agar `updatePhysics` memiliki data grup terbaru.
+        categoryGroups.clear();
+        for (GraphNode node : graphNodes) {
+            String cat = idToCategoryMap.getOrDefault(node.id, "Uncategorized");
+            categoryGroups.computeIfAbsent(cat, k -> new ArrayList<>()).add(node);
+        }
+    }
+
     public void refreshNodes(List<GraphNode> newNodes) {
         this.graphNodes = newNodes;
         this.isInitializingAnimation = true;
@@ -190,48 +288,53 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
             return;
         }
 
-        // 1. Loop Hitung Gaya Fisika Dinamis (Tolak-menolak antar node)
+        // 1. Gaya Tolak-Menolak (Repulsion) antar semua node
         for (int i = 0; i < graphNodes.size(); i++) {
-            GraphNode n1 = graphNodes.get(i);
-            for (int j = 0; j < graphNodes.size(); j++) {
-                if (i == j) {
-                    continue;
-                }
+            for (int j = i + 1; j < graphNodes.size(); j++) {
+                GraphNode n1 = graphNodes.get(i);
                 GraphNode n2 = graphNodes.get(j);
+
                 double dx = n1.x - n2.x;
                 double dy = n1.y - n2.y;
                 double dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist == 0) {
-                    dist = 1;
-                }
+                if (dist == 0) dist = 1; // Hindari pembagian dengan nol
 
-                // Jarak tolak diperkecil sedikit agar tidak mental terlalu ekstrem saat berdekatan
-                if (dist < 180) {
+                // Terapkan gaya tolak jika jarak terlalu dekat
+                if (dist < 200) {
                     double force = REPEL_FORCE / (dist * dist);
-                    n1.vx += (dx / dist) * force;
-                    n1.vy += (dy / dist) * force;
-                }
-            }
+                    double forceX = (dx / dist) * force;
+                    double forceY = (dy / dist) * force;
 
-            // 2. Gaya Tarik Pegas (Untuk Node dalam Kategori yang Sama)
-            for (int j = i + 1; j < graphNodes.size(); j++) {
-                GraphNode n2 = graphNodes.get(j);
-                if (n1.color.getRGB() == n2.color.getRGB()) {
-                    double dx = n1.x - n2.x;
-                    double dy = n1.y - n2.y;
-                    double dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist <= MAX_LINE_DIST) {
-                        double force = SPRING_FORCE * (dist - 100);
-                        n1.vx -= (dx / dist) * force;
-                        n1.vy -= (dy / dist) * force;
-                        n2.vx += (dx / dist) * force;
-                        n2.vy += (dy / dist) * force;
-                    }
+                    n1.vx += forceX;
+                    n1.vy += forceY;
+                    n2.vx -= forceX; // Terapkan gaya berlawanan pada node kedua
+                    n2.vy -= forceY;
                 }
             }
         }
 
-        // 3. Update Posisi Node & Batasi Kecepatan (Damping Eksplosif Dimatikan)
+        // 2. Gaya Tarik Pegas (Spring) untuk node dalam kategori yang sama
+        for (ArrayList<GraphNode> group : categoryGroups.values()) {
+            for (int i = 0; i < group.size(); i++) {
+                for (int j = i + 1; j < group.size(); j++) {
+                    GraphNode n1 = group.get(i);
+                    GraphNode n2 = group.get(j);
+
+                    double dx = n2.x - n1.x;
+                    double dy = n2.y - n1.y;
+                    double dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist == 0) dist = 1;
+
+                    double force = SPRING_FORCE * (dist - 150); // 150 adalah panjang ideal pegas
+                    n1.vx += (dx / dist) * force;
+                    n1.vy += (dy / dist) * force;
+                    n2.vx -= (dx / dist) * force;
+                    n2.vy -= (dy / dist) * force;
+                }
+            }
+        }
+
+        // 3. Update posisi node berdasarkan akumulasi gaya dan terapkan redaman
         for (GraphNode node : graphNodes) {
             node.x += Math.max(-6, Math.min(6, node.vx));
             node.y += Math.max(-6, Math.min(6, node.vy));
@@ -270,98 +373,18 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
         gGlow.fillOval(cx - 550, cy - 550, 1100, 1100);
         gGlow.dispose();
 
-        Map<String, ArrayList<GraphNode>> categoryGroups = new HashMap<>();
-        List<Catatan> semuaCatatan = repo.getAllCatatan();
-        Map<String, String> idToCategoryMap = new HashMap<>();
-        Map<String, String> idToTitleMap = new HashMap<>();
+        // Gambar garis koneksi antar node
+        drawConnections(g2d);
+        drawExplicitLinks(g2d); // FITUR BARU
 
-        for (Catatan c : semuaCatatan) {
-            String kat = (c.getKategori() == null || c.getKategori().trim().isEmpty()) ? "Uncategorized" : c.getKategori();
-            idToCategoryMap.put(c.getId(), kat);
-            idToTitleMap.put(c.getId(), c.getJudul().toLowerCase());
-        }
-
-        for (GraphNode node : graphNodes) {
-            String cat = idToCategoryMap.getOrDefault(node.id, "Uncategorized");
-            categoryGroups.putIfAbsent(cat, new ArrayList<>());
-            categoryGroups.get(cat).add(node);
-        }
-
+        // Gambar setiap node dan labelnya
         String selectedId = mainFrame.getSelectedId();
         String selectedCategory = (selectedId != null) ? idToCategoryMap.get(selectedId) : null;
 
-        int MAX_LINE_DIST = 350;
-        if (selectedId != null && selectedCategory != null) {
-            ArrayList<GraphNode> nodesInSelectedGroup = categoryGroups.get(selectedCategory);
-            if (nodesInSelectedGroup != null) {
-                for (int i = 0; i < nodesInSelectedGroup.size(); i++) {
-                    for (int j = i + 1; j < nodesInSelectedGroup.size(); j++) {
-                        GraphNode n1 = nodesInSelectedGroup.get(i);
-                        GraphNode n2 = nodesInSelectedGroup.get(j);
-                        double d = Math.sqrt(Math.pow(n1.x - n2.x, 2) + Math.pow(n1.y - n2.y, 2));
-                        if (d <= MAX_LINE_DIST) {
-                            g2d.setColor(new Color(0, 215, 255, 175));
-                            g2d.setStroke(new BasicStroke(1.5f));
-                            g2d.drawLine((int) n1.x + 4, (int) n1.y + 4, (int) n2.x + 4, (int) n2.y + 4);
-                            int pulseX = (int) (n1.x + 4 + (n2.x - n1.x) * pulseTracker);
-                            int pulseY = (int) (n1.y + 4 + (n2.y - n1.y) * pulseTracker);
-                            g2d.setColor(Color.WHITE);
-                            g2d.fillOval(pulseX - 2, pulseY - 2, 4, 4);
-                        }
-                    }
-                }
-            }
-        }
-
         for (GraphNode node : graphNodes) {
-            int nx = (int) node.x;
-            int ny = (int) node.y;
-            boolean isSelected = selectedId != null && selectedId.equals(node.id);
-            String currentCategory = idToCategoryMap.getOrDefault(node.id, "Uncategorized");
-            String lowerTitle = idToTitleMap.getOrDefault(node.id, "");
-            boolean matchesSearch = searchQuery.isEmpty()
-                    || lowerTitle.contains(searchQuery)
-                    || currentCategory.toLowerCase().contains(searchQuery);
-            int baseGroupSize = categoryGroups.getOrDefault(currentCategory, new ArrayList<>()).size();
-            int nodeDiameter = 8 + Math.min(10, baseGroupSize / 2);
-            int glowDiameter = nodeDiameter + 12;
-            int alphaGlow = 35, alphaCore = 220, alphaText = 165;
-
-            if (!matchesSearch) {
-                alphaGlow = 2;
-                alphaCore = 25;
-                alphaText = 15;
-            } else if (selectedId != null) {
-                if (!currentCategory.equals(selectedCategory) && !isSelected) {
-                    alphaGlow = 3;
-                    alphaCore = 40;
-                    alphaText = 30;
-                } else if (!isSelected) {
-                    alphaGlow = 75;
-                    alphaCore = 255;
-                    alphaText = 225;
-                }
-            }
-
-            if (isSelected) {
-                g2d.setColor(new Color(255, 0, 100, 110));
-                g2d.fillOval(nx - (glowDiameter / 2) + 4, ny - (glowDiameter / 2) + 4, glowDiameter, glowDiameter);
-                g2d.setColor(Color.WHITE);
-                g2d.fillOval(nx - (nodeDiameter / 2) + 4, ny - (nodeDiameter / 2) + 4, nodeDiameter, nodeDiameter);
-            } else {
-                g2d.setColor(new Color(node.color.getRed(), node.color.getGreen(), node.color.getBlue(), alphaGlow));
-                g2d.fillOval(nx - (glowDiameter / 2) + 4, ny - (glowDiameter / 2) + 4, glowDiameter, glowDiameter);
-                g2d.setColor(new Color(node.color.getRed(), node.color.getGreen(), node.color.getBlue(), alphaCore));
-                g2d.fillOval(nx - (nodeDiameter / 2) + 4, ny - (nodeDiameter / 2) + 4, nodeDiameter, nodeDiameter);
-            }
-            if (isSelected) {
-                g2d.setColor(Color.WHITE);
-                g2d.setFont(new Font("SansSerif", Font.BOLD, 12));
-            } else {
-                g2d.setColor(new Color(195, 195, 215, alphaText));
-                g2d.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            }
-            g2d.drawString(node.title, nx - 15, ny + nodeDiameter + 10);
+            // Cukup panggil metode helper yang sudah bersih dan terstruktur
+            drawNode(g2d, node, selectedId, selectedCategory);
+            drawNodeLabel(g2d, node, selectedId, selectedCategory);
         }
         g2d.setTransform(oldXForm);
     }
@@ -392,6 +415,143 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
                 JOptionPane.showMessageDialog(this, "Gagal mengeksport file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
+    }
+
+    private void drawConnections(Graphics2D g2d) {
+        String selectedId = mainFrame.getSelectedId();
+        String selectedCategory = (selectedId != null) ? idToCategoryMap.get(selectedId) : null;
+
+        if (selectedId == null || selectedCategory == null) {
+            return;
+        }
+
+        ArrayList<GraphNode> nodesInSelectedGroup = categoryGroups.get(selectedCategory);
+        if (nodesInSelectedGroup == null) {
+            return;
+        }
+
+        g2d.setColor(new Color(0, 215, 255, 175));
+        g2d.setStroke(new BasicStroke(1.5f));
+
+        for (int i = 0; i < nodesInSelectedGroup.size(); i++) {
+            for (int j = i + 1; j < nodesInSelectedGroup.size(); j++) {
+                GraphNode n1 = nodesInSelectedGroup.get(i);
+                GraphNode n2 = nodesInSelectedGroup.get(j);
+                double d = Math.hypot(n1.x - n2.x, n1.y - n2.y);
+
+                if (d <= MAX_LINE_DIST) {
+                    int x1 = (int) n1.x + 4;
+                    int y1 = (int) n1.y + 4;
+                    int x2 = (int) n2.x + 4;
+                    int y2 = (int) n2.y + 4;
+                    g2d.drawLine(x1, y1, x2, y2);
+
+                    // Gambar pulsa animasi di garis
+                    int pulseX = (int) (x1 + (x2 - x1) * pulseTracker);
+                    int pulseY = (int) (y1 + (y2 - y1) * pulseTracker);
+                    g2d.setColor(Color.WHITE);
+                    g2d.fillOval(pulseX - 2, pulseY - 2, 4, 4);
+                    g2d.setColor(new Color(0, 215, 255, 175)); // Kembalikan warna untuk garis berikutnya
+                }
+            }
+        }
+    }
+
+    private void drawExplicitLinks(Graphics2D g2d) {
+        if (explicitLinks.isEmpty()) return;
+
+        g2d.setColor(new Color(255, 255, 0, 180)); // Warna kuning untuk link eksplisit
+        g2d.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 0, new float[]{6, 4}, 0)); // Garis putus-putus
+
+        Map<String, GraphNode> nodeMap = new HashMap<>();
+        for (GraphNode n : graphNodes) {
+            nodeMap.put(n.id, n);
+        }
+
+        for (Link link : explicitLinks) {
+            GraphNode sourceNode = nodeMap.get(link.sourceId);
+            GraphNode targetNode = nodeMap.get(link.targetId);
+
+            if (sourceNode != null && targetNode != null) {
+                int x1 = (int) sourceNode.x + 4;
+                int y1 = (int) sourceNode.y + 4;
+                int x2 = (int) targetNode.x + 4;
+                int y2 = (int) targetNode.y + 4;
+                g2d.drawLine(x1, y1, x2, y2);
+            }
+        }
+    }
+
+    private void drawNode(Graphics2D g2d, GraphNode node, String selectedId, String selectedCategory) {
+        final int BASE_DIAMETER = 8;
+        final int MAX_EXTRA_DIAMETER = 10;
+        final int GLOW_OFFSET = 12;
+        final int NODE_DRAW_OFFSET = 4;
+
+        boolean isSelected = node.id.equals(selectedId);
+        String currentCategory = idToCategoryMap.getOrDefault(node.id, "Uncategorized");
+        String lowerTitle = idToTitleMap.getOrDefault(node.id, "");
+        boolean matchesSearch = searchQuery.isEmpty() || lowerTitle.contains(searchQuery) || currentCategory.toLowerCase().contains(searchQuery);
+
+        int baseGroupSize = categoryGroups.getOrDefault(currentCategory, new ArrayList<>()).size();
+        int nodeDiameter = BASE_DIAMETER + Math.min(MAX_EXTRA_DIAMETER, baseGroupSize / 2);
+        int glowDiameter = nodeDiameter + GLOW_OFFSET;
+
+        int alphaGlow = 35, alphaCore = 220;
+
+        if (!matchesSearch) {
+            alphaGlow = 2; alphaCore = 25;
+        } else if (selectedId != null) {
+            if (!currentCategory.equals(selectedCategory) && !isSelected) {
+                alphaGlow = 3; alphaCore = 40;
+            } else if (!isSelected) {
+                alphaGlow = 75; alphaCore = 255;
+            }
+        }
+
+        int nx = (int) node.x;
+        int ny = (int) node.y;
+
+        if (isSelected) {
+            g2d.setColor(new Color(255, 0, 100, 110)); // Warna glow khusus untuk node terpilih
+            g2d.fillOval(nx - (glowDiameter / 2) + NODE_DRAW_OFFSET, ny - (glowDiameter / 2) + NODE_DRAW_OFFSET, glowDiameter, glowDiameter);
+            g2d.setColor(Color.WHITE); // Warna inti khusus untuk node terpilih
+            g2d.fillOval(nx - (nodeDiameter / 2) + NODE_DRAW_OFFSET, ny - (nodeDiameter / 2) + NODE_DRAW_OFFSET, nodeDiameter, nodeDiameter);
+        } else {
+            g2d.setColor(new Color(node.color.getRed(), node.color.getGreen(), node.color.getBlue(), alphaGlow));
+            g2d.fillOval(nx - (glowDiameter / 2) + NODE_DRAW_OFFSET, ny - (glowDiameter / 2) + NODE_DRAW_OFFSET, glowDiameter, glowDiameter);
+            g2d.setColor(new Color(node.color.getRed(), node.color.getGreen(), node.color.getBlue(), alphaCore));
+            g2d.fillOval(nx - (nodeDiameter / 2) + NODE_DRAW_OFFSET, ny - (nodeDiameter / 2) + NODE_DRAW_OFFSET, nodeDiameter, nodeDiameter);
+        }
+    }
+
+    private void drawNodeLabel(Graphics2D g2d, GraphNode node, String selectedId, String selectedCategory) {
+        boolean isSelected = node.id.equals(selectedId);
+        String currentCategory = idToCategoryMap.getOrDefault(node.id, "Uncategorized");
+        String lowerTitle = idToTitleMap.getOrDefault(node.id, "");
+        boolean matchesSearch = searchQuery.isEmpty() || lowerTitle.contains(searchQuery) || currentCategory.toLowerCase().contains(searchQuery);
+
+        int alphaText = 165;
+        if (!matchesSearch) {
+            alphaText = 15;
+        } else if (selectedId != null) {
+            if (!currentCategory.equals(selectedCategory) && !isSelected) {
+                alphaText = 30;
+            } else if (!isSelected) {
+                alphaText = 225;
+            }
+        }
+
+        if (isSelected) {
+            g2d.setColor(Color.WHITE);
+            g2d.setFont(new Font("SansSerif", Font.BOLD, 12));
+        } else {
+            g2d.setColor(new Color(195, 195, 215, alphaText));
+            g2d.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        }
+        
+        int nodeDiameter = 8 + Math.min(10, categoryGroups.getOrDefault(currentCategory, new ArrayList<>()).size() / 2);
+        g2d.drawString(node.title, (int)node.x - 15, (int)node.y + nodeDiameter + 10);
     }
 
     private void initMouseListeners() {

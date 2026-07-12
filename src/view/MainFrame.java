@@ -1,12 +1,43 @@
 package view;
 
-import java.awt.*;
+
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.GridLayout;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.sql.SQLException;
 import java.util.List;
-import javax.swing.*;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
+
+import javax.swing.BorderFactory;
+import javax.swing.JComboBox;
+import javax.swing.JEditorPane;
+import javax.swing.JComponent;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.border.Border;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+
+import com.vladsch.flexmark.html.HtmlRenderer;
+import com.vladsch.flexmark.parser.Parser;
+import com.vladsch.flexmark.util.data.MutableDataSet;
+import com.vladsch.flexmark.util.ast.Node;
+
 import model.Catatan;
 import repository.CatatanRepository;
 
@@ -16,25 +47,51 @@ public class MainFrame extends JFrame {
     private DefaultTableModel tableModel;
     private JTextField txtJudul;
     private JComboBox<String> cbKategori;
-    private JTextArea txtKonten;
+    private JTextArea txtKonten; // Untuk mode edit
+    private JEditorPane previewKonten; // Untuk mode preview Markdown
+    private JTabbedPane tabKonten; // Kontainer untuk editor dan preview
     private JTextField txtCari;
 
-    private JButton btnSimpan;
-    private JButton btnHapus;
-    private JButton btnClear;
+    private RoundedButton btnSimpan;
+    private RoundedButton btnHapus;
+    private RoundedButton btnClear;
 
     private GraphPanel graphPanel;
     private CatatanRepository repo;
     private String selectedId = null;
+
+    // Parser dan Renderer untuk Markdown (Flexmark)
+    private Parser markdownParser;
+    private HtmlRenderer htmlRenderer;
+
+    // --- PALET WARNA CYBERPUNK/DARK HUD ---
+    private static final Color BG_MAIN = new Color(0x0B0F19); // Deep Space Black
+    private static final Color BG_SURFACE = new Color(0x161B22); // Dark Graphite
+    private static final Color BG_INPUT = new Color(0x1F2937);
+    private static final Color ACCENT_GREEN = new Color(0x10B981);
+    private static final Color ACCENT_RED = new Color(0xEF4444);
+    private static final Color ACCENT_PURPLE = new Color(110, 68, 255);
+    private static final Color ACCENT_CYAN_FOCUS = new Color(0x00E5FF);
+    private static final Color BORDER_MUTED = new Color(0x4B5563);
+    private static final Color TEXT_MAIN = new Color(0xF3F4F6);
+    private static final Color TEXT_MUTED = Color.LIGHT_GRAY;
 
     public MainFrame() {
         setTitle("Second Brain App - Mahasiswa Edition");
         setSize(1200, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
-        getContentPane().setBackground(new Color(15, 15, 28));
+        getContentPane().setBackground(BG_MAIN);
 
         repo = new CatatanRepository();
+
+        // FITUR BARU: Inisialisasi parser Markdown
+        MutableDataSet options = new MutableDataSet();
+        markdownParser = Parser.builder(options).build();
+        htmlRenderer = HtmlRenderer.builder(options).build();
+
+        graphPanel = new GraphPanel(repo, this); // Pastikan graphPanel dibuat SEBELUM digunakan
+
         initComponents();
         layoutComponents();
         initEvents();
@@ -43,8 +100,15 @@ public class MainFrame extends JFrame {
         refreshData();
     }
 
+    private void applyModernStyling(JComponent component, Border defaultBorder, Border focusBorder) {
+        component.setBorder(defaultBorder);
+        component.addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent e) { component.setBorder(focusBorder); }
+            @Override public void focusLost(FocusEvent e) { component.setBorder(defaultBorder); }
+        });
+    }
+
     private void initComponents() {
-                // Inisialisasi & Kustomisasi Tabel Transparan
         String[] kolom = {"ID", "Tanggal", "Judul Catatan"};
         tableModel = new DefaultTableModel(kolom, 0) {
             @Override
@@ -54,76 +118,101 @@ public class MainFrame extends JFrame {
         };
         
         tabelCatatan = new JTable(tableModel);
-tabelCatatan.setAutoCreateRowSorter(true);
-        // Inisialisasi Komponen Input dengan Tema Dark
+        tabelCatatan.setAutoCreateRowSorter(true);
+
+        // --- Kustomisasi Form Input Modern ---
+        Border defaultBorder = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_MUTED, 1),
+            BorderFactory.createEmptyBorder(5, 8, 5, 8)
+        );
+        Border focusBorder = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_CYAN_FOCUS, 1),
+            BorderFactory.createEmptyBorder(5, 8, 5, 8)
+        );
+
         txtCari = new JTextField();
-        txtCari.setBackground(new Color(20, 20, 35));
-        txtCari.setForeground(Color.WHITE);
-        txtCari.setCaretColor(Color.WHITE);
-        txtCari.setBorder(BorderFactory.createLineBorder(new Color(40, 40, 65), 1));
+        txtCari.setBackground(BG_INPUT);
+        txtCari.setForeground(TEXT_MAIN);
+        txtCari.setCaretColor(ACCENT_CYAN_FOCUS);
+        applyModernStyling(txtCari, defaultBorder, focusBorder);
 
         txtJudul = new JTextField();
-        txtJudul.setBackground(new Color(20, 20, 35));
-        txtJudul.setForeground(Color.WHITE);
-        txtJudul.setCaretColor(Color.WHITE);
-        txtJudul.setBorder(BorderFactory.createLineBorder(new Color(40, 40, 65), 1));
+        txtJudul.setBackground(BG_INPUT);
+        txtJudul.setForeground(TEXT_MAIN);
+        txtJudul.setCaretColor(ACCENT_CYAN_FOCUS);
+        applyModernStyling(txtJudul, defaultBorder, focusBorder);
 
         cbKategori = new JComboBox<>();
         cbKategori.setEditable(true);
-        cbKategori.setBackground(new Color(20, 20, 35));
-        cbKategori.setForeground(Color.WHITE);
-        // Membuat editor internal ComboBox sewarna
-        Component editor = cbKategori.getEditor().getEditorComponent();
-        if (editor instanceof JTextField) {
-            ((JTextField) editor).setBackground(new Color(20, 20, 35));
-            ((JTextField) editor).setForeground(Color.WHITE);
-            ((JTextField) editor).setCaretColor(Color.WHITE);
-            ((JTextField) editor).setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
-        }
-        cbKategori.setBorder(BorderFactory.createLineBorder(new Color(40, 40, 65), 1));
+        cbKategori.setBackground(BG_INPUT);
+        cbKategori.setForeground(TEXT_MAIN);
+        cbKategori.setBorder(BorderFactory.createLineBorder(BORDER_MUTED, 1));
+        // FlatLaf menangani styling ComboBox dengan baik, jadi kustomisasi minimal
+
+        // FITUR BARU: Mengganti JTextArea dengan Tabbed Pane untuk Edit & Preview
+        tabKonten = new JTabbedPane();
+        tabKonten.setBackground(BG_MAIN);
+        tabKonten.setForeground(TEXT_MUTED);
 
         txtKonten = new JTextArea();
-        txtKonten.setBackground(new Color(15, 15, 30));
-        txtKonten.setForeground(Color.WHITE);
-        txtKonten.setCaretColor(Color.WHITE);
+        txtKonten.setBackground(BG_INPUT);
+        txtKonten.setForeground(TEXT_MAIN);
+        txtKonten.setCaretColor(ACCENT_CYAN_FOCUS);
         txtKonten.setLineWrap(true);
         txtKonten.setWrapStyleWord(true);
-        txtKonten.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        JScrollPane scrollEdit = new JScrollPane(txtKonten);
+        scrollEdit.setBorder(null);
 
-        // Tombol-tombol Berwarna Neon / Soft Dark
-        btnClear = new JButton("Batal");
-        btnClear.setBackground(new Color(50, 50, 50));
-        btnClear.setForeground(Color.WHITE);
-        btnClear.setFocusPainted(false);
-        btnClear.setBorder(BorderFactory.createEmptyBorder(8, 15, 8, 15));
+        previewKonten = new JEditorPane();
+        previewKonten.setContentType("text/html");
+        previewKonten.setEditable(false);
+        previewKonten.setBackground(BG_INPUT);
+        JScrollPane scrollPreview = new JScrollPane(previewKonten);
 
-        btnSimpan = new JButton("Simpan Baru");
-        btnSimpan.setBackground(new Color(40, 167, 69)); // Mengembalikan warna HIJAU EMERALD asli
-        btnSimpan.setForeground(Color.WHITE);
-        btnSimpan.setFocusPainted(false);
-        btnSimpan.setFont(new Font("SansSerif", Font.BOLD, 11)); // Mengecilkan font ke 11 agar teks tidak kepotong (...)
-        btnSimpan.setBorder(BorderFactory.createEmptyBorder(8, 5, 8, 5)); // Menipiskan padding kanan-kiri
+        tabKonten.addTab("📝 Edit", scrollEdit);
+        tabKonten.addTab("👁️ Preview", scrollPreview);
 
-        btnHapus = new JButton("Hapus");
-        btnHapus.setBackground(new Color(235, 69, 95)); // Merah kustom hangat
-        btnHapus.setForeground(Color.WHITE);
-        btnHapus.setFocusPainted(false);
-        btnHapus.setBorder(BorderFactory.createEmptyBorder(8, 15, 8, 15));
+        // --- Tombol Aksi Rounded & Glowing ---
+        btnClear = new RoundedButton("Batal");
+        btnClear.setBackground(BORDER_MUTED);
 
-        tabelCatatan.setBackground(new Color(20, 20, 35));
-        tabelCatatan.setForeground(Color.WHITE);
-        tabelCatatan.setGridColor(new Color(30, 30, 50)); // Garis grid dibuat samar
-        tabelCatatan.setRowHeight(25); // Baris lebih renggang & elegan
-        tabelCatatan.setSelectionBackground(new Color(45, 45, 75)); // Warna sorot redup nyaman di mata
+        btnSimpan = new RoundedButton("Simpan Baru");
+        btnSimpan.setBackground(ACCENT_GREEN);
+
+        btnHapus = new RoundedButton("Hapus");
+        btnHapus.setBackground(ACCENT_RED);
+
+        // --- Kustomisasi Tabel Futuristik ---
+        tabelCatatan.setBackground(BG_MAIN);
+        tabelCatatan.setForeground(TEXT_MAIN);
+        tabelCatatan.setGridColor(BG_SURFACE);
+        tabelCatatan.setRowHeight(30);
+        tabelCatatan.setSelectionBackground(ACCENT_CYAN_FOCUS.darker());
         tabelCatatan.setSelectionForeground(Color.WHITE);
         tabelCatatan.setShowGrid(true);
+        tabelCatatan.setShowVerticalLines(false); // Hilangkan garis vertikal
 
-        // Desain Header Tabel agar tidak putih kaku
-        tabelCatatan.getTableHeader().setBackground(new Color(25, 25, 45));
-        tabelCatatan.getTableHeader().setForeground(Color.WHITE);
-        tabelCatatan.getTableHeader().setBorder(BorderFactory.createLineBorder(new Color(40, 40, 65)));
+        tabelCatatan.getTableHeader().setBackground(BG_SURFACE);
+        tabelCatatan.getTableHeader().setForeground(TEXT_MAIN);
+        tabelCatatan.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        tabelCatatan.getTableHeader().setBorder(BorderFactory.createLineBorder(BORDER_MUTED));
+        
+        // Pindahkan pengaturan renderer ke sini agar hanya diatur sekali.
+        // Ini memperbaiki ClassCastException dan inefisiensi.
+        tabelCatatan.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10)); // Padding sel
+                setForeground(TEXT_MAIN);
+                if (!isSelected) {
+                    setBackground(row % 2 == 0 ? BG_MAIN : BG_SURFACE);
+                }
+                setText(value != null ? value.toString() : "");
+                return this;
+            }
+        });
 
-        graphPanel = new GraphPanel(repo, this);
     }
 
     private void layoutComponents() {
@@ -131,8 +220,8 @@ tabelCatatan.setAutoCreateRowSorter(true);
 
         // PANEL KIRI
         JPanel panelKiri = new JPanel(new GridBagLayout());
-        panelKiri.setPreferredSize(new Dimension(350, 700));
-        panelKiri.setBackground(new Color(15, 15, 28)); // Warna background utama kiri
+        panelKiri.setPreferredSize(new Dimension(380, 700)); // Lebarkan sedikit
+        panelKiri.setBackground(BG_MAIN);
         panelKiri.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
         GridBagConstraints gbc = new GridBagConstraints();
@@ -141,7 +230,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
 
         // Judul Logs Aplikasi
         JLabel lblApp = new JLabel("📊 Second Brain Logs", JLabel.LEFT);
-        lblApp.setFont(new Font("SansSerif", Font.BOLD, 18));
+        lblApp.setFont(new Font("Segoe UI", Font.BOLD, 20));
         lblApp.setForeground(Color.WHITE);
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -155,7 +244,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
         gbc.gridwidth = 1;
         gbc.weightx = 0.2;
         JLabel lblCari = new JLabel("Cari:");
-        lblCari.setForeground(Color.LIGHT_GRAY);
+        lblCari.setForeground(TEXT_MUTED);
         panelKiri.add(lblCari, gbc);
         gbc.gridx = 1;
         gbc.weightx = 0.8;
@@ -168,8 +257,8 @@ tabelCatatan.setAutoCreateRowSorter(true);
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
         JScrollPane scrollTable = new JScrollPane(tabelCatatan);
-        scrollTable.getViewport().setBackground(new Color(20, 20, 35));
-        scrollTable.setBorder(BorderFactory.createLineBorder(new Color(40, 40, 65)));
+        scrollTable.getViewport().setBackground(BG_MAIN);
+        scrollTable.setBorder(BorderFactory.createLineBorder(BORDER_MUTED));
         panelKiri.add(scrollTable, gbc);
 
         // Label & Input Judul
@@ -179,7 +268,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
         gbc.gridwidth = 1;
         gbc.weightx = 0.2;
         JLabel lblJudul = new JLabel("Judul:");
-        lblJudul.setForeground(Color.LIGHT_GRAY);
+        lblJudul.setForeground(TEXT_MUTED);
         panelKiri.add(lblJudul, gbc);
         gbc.gridx = 1;
         gbc.weightx = 0.8;
@@ -190,7 +279,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
         gbc.gridy = 4;
         gbc.weightx = 0.2;
         JLabel lblKategori = new JLabel("Kategori:");
-        lblKategori.setForeground(Color.LIGHT_GRAY);
+        lblKategori.setForeground(TEXT_MUTED);
         panelKiri.add(lblKategori, gbc);
         gbc.gridx = 1;
         gbc.weightx = 0.8;
@@ -202,16 +291,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
         gbc.gridwidth = 2;
         gbc.weighty = 0.8;
         gbc.fill = GridBagConstraints.BOTH;
-        JPanel panelIsi = new JPanel(new BorderLayout());
-        panelIsi.setBackground(new Color(15, 15, 28));
-        JLabel lblIsi = new JLabel("Isi:");
-        lblIsi.setForeground(Color.LIGHT_GRAY);
-        lblIsi.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
-        panelIsi.add(lblIsi, BorderLayout.NORTH);
-        JScrollPane scrollKonten = new JScrollPane(txtKonten);
-        scrollKonten.setBorder(BorderFactory.createLineBorder(new Color(40, 40, 65)));
-        panelIsi.add(scrollKonten, BorderLayout.CENTER);
-        panelKiri.add(panelIsi, gbc);
+        
 
         // Barisan Tombol Aksi di Bawah
         gbc.weighty = 0;
@@ -219,36 +299,38 @@ tabelCatatan.setAutoCreateRowSorter(true);
         gbc.gridy = 6;
         gbc.gridwidth = 2;
         JPanel panelTombol = new JPanel(new GridLayout(1, 3, 10, 0));
-        panelTombol.setBackground(new Color(15, 15, 28));
+        panelTombol.setOpaque(false); // Buat transparan
         panelTombol.setBorder(BorderFactory.createEmptyBorder(15, 0, 0, 0));
         panelTombol.add(btnClear);
         panelTombol.add(btnSimpan);
         panelTombol.add(btnHapus);
         panelKiri.add(panelTombol, gbc);
 
+        // Pindahkan penambahan tabKonten ke sini setelah panelTombol
+        // agar referensi 'defaultBorder' valid.
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        gbc.gridwidth = 2;
+        gbc.weighty = 0.8;
+        gbc.fill = GridBagConstraints.BOTH;
+        panelKiri.add(tabKonten, gbc);
+
         add(panelKiri, BorderLayout.WEST);
-        add(graphPanel, BorderLayout.CENTER);
         add(graphPanel, BorderLayout.CENTER);
     }
 
     private void initEvents() {
         // Event ketika baris tabel dipilih manual oleh user
-        tabelCatatan.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
-            private boolean isAdjusting = false;
-
-            @Override
-            public void valueChanged(ListSelectionEvent e) {
-                if (!e.getValueIsAdjusting() && tabelCatatan.getSelectedRow() != -1) {
-                    int row = tabelCatatan.getSelectedRow();
-                    String id = tableModel.getValueAt(row, 0).toString();
-
-                    // Supaya tidak terjadi infinity loop/tabrakan event, set ID langsung tanpa memicu seleksi ulang
-                    selectedId = id;
-                    tampilkanDataKeForm(id);
-
-                    if (graphPanel != null) {
-                        graphPanel.repaint();
-                    }
+        tabelCatatan.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                int selectedRow = tabelCatatan.getSelectedRow();
+                if (selectedRow != -1) {
+                    // Konversi view index ke model index jika ada sorting
+                    int modelRow = tabelCatatan.convertRowIndexToModel(selectedRow);
+                    String id = tableModel.getValueAt(modelRow, 0).toString();
+                    
+                    // Panggil metode sinkronisasi yang sudah ada
+                    setSelectedId(id);
                 }
             }
         });
@@ -318,6 +400,25 @@ tabelCatatan.setAutoCreateRowSorter(true);
                 }
             }
         });
+
+        // FITUR BARU: Update preview Markdown saat tab diubah
+        tabKonten.addChangeListener(e -> {
+            if (tabKonten.getSelectedIndex() == 1) { // Jika tab "Preview" dipilih
+                String markdownText = txtKonten.getText();
+                Node document = markdownParser.parse(markdownText);
+                String html = htmlRenderer.render(document);
+                // Tambahkan sedikit CSS agar sesuai tema gelap
+                previewKonten.setText("<html><body style='background-color:#1F2937; color:#F3F4F6; font-family:sans-serif; padding:8px;'>" + html + "</body></html>");
+            }
+        });
+
+        // FITUR BARU: Simpan posisi node saat aplikasi ditutup
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                graphPanel.simpanPosisiNode();
+            }
+        });
     }
 
     // ==========================================
@@ -365,7 +466,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
             cbKategori.setSelectedItem(c.getKategori());
             txtKonten.setText(c.getKonten());
             btnSimpan.setText("Perbarui");
-            btnSimpan.setBackground(new Color(110, 68, 255)); // Berubah UNGU saat mode edit
+            btnSimpan.setBackground(ACCENT_PURPLE); // Berubah UNGU saat mode edit
         }
     }
 
@@ -376,7 +477,7 @@ tabelCatatan.setAutoCreateRowSorter(true);
         txtKonten.setText("");
         tabelCatatan.clearSelection();
         btnSimpan.setText("Simpan Baru");
-        btnSimpan.setBackground(new Color(40, 167, 69)); // Set kembali ke HIJAU saat kosong
+        btnSimpan.setBackground(ACCENT_GREEN); // Set kembali ke HIJAU saat kosong
         if (graphPanel != null) {
             graphPanel.repaint();
         }
@@ -406,11 +507,5 @@ tabelCatatan.setAutoCreateRowSorter(true);
         if (graphPanel != null) {
             graphPanel.SinkronkanNodes(list);
         }
-    }
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            new MainFrame().setVisible(true);
-        });
     }
 }

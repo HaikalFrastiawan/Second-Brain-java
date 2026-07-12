@@ -1,9 +1,14 @@
 package repository;
 
-import config.Koneksi;
-import java.sql.*;   
+import java.sql.Connection;
+import java.sql.PreparedStatement;   
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+
+import config.Koneksi;
 import model.Catatan;
 
 public class CatatanRepository {
@@ -114,6 +119,19 @@ public class CatatanRepository {
             pst.setString(2, konten);
             pst.setString(3, kategori != null ? kategori.trim() : "");
             pst.setString(4, id);
+            
+            return pst.executeUpdate() > 0;
+        }
+    }
+
+    public boolean updateKoordinat(String id, double x, double y) throws SQLException {
+        String sql = "UPDATE catatan SET koordinat_x=?, koordinat_y=? WHERE id_catatan=?";
+        try (Connection conn = Koneksi.configDB();
+             PreparedStatement pst = conn.prepareStatement(sql)) {
+            
+            pst.setInt(1, (int) x);
+            pst.setInt(2, (int) y);
+            pst.setString(3, id);
             
             return pst.executeUpdate() > 0;
         }
