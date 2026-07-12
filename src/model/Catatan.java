@@ -29,4 +29,7 @@ public class Catatan {
     public String getTanggal() { return tanggal; }
     public int getKoordinatX() { return koordinatX; }
     public int getKoordinatY() { return koordinatY; }
+    public void setId(String id) {
+        this.id = id;
+    }
 }

@@ -25,14 +25,16 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 import javax.swing.BorderFactory;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JLabel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
+import javax.swing.Timer; // <-- Tambahkan import ini
 
 import model.Catatan;
 import repository.CatatanRepository;
@@ -123,18 +125,20 @@ public class GraphPanel extends JPanel {
         Font fontSinyal = new Font("SansSerif", Font.BOLD, 14);
         Color warnaBgTombol = new Color(25, 25, 45, 220); // Semi-transparan dark
         Color warnaGaris = new Color(60, 60, 90);
+        // Menggunakan emoji secara langsung, tidak perlu file gambar.
+        // Font "Segoe UI Emoji" biasanya tersedia di Windows dan bagus untuk render emoji.
+        Font fontEmoji = new Font("Segoe UI Emoji", Font.PLAIN, 16);
 
-        // Inisialisasi komponen overlay
-        btnZoomIn = new JButton("+");
-        btnZoomOut = new JButton("-");
+        btnZoomIn = new JButton("➕");
+        btnZoomOut = new JButton("➖");
         btnResetZoom = new JButton("🎯");
         btnExportMd = new JButton("📝 Export Weekly Review (.md)");
 
         JButton[] listTombol = {btnZoomIn, btnZoomOut, btnResetZoom, btnExportMd};
         for (JButton btn : listTombol) {
-            btn.setBackground(warnaBgTombol);
+            btn.setBackground(btn == btnExportMd ? warnaBgTombol : new Color(0,0,0,0)); // Buat tombol ikon transparan
             btn.setForeground(Color.WHITE);
-            btn.setFont(btn == btnExportMd ? new Font("SansSerif", Font.BOLD, 11) : fontSinyal);
+            btn.setFont(btn == btnExportMd ? new Font("SansSerif", Font.BOLD, 11) : fontEmoji);
             btn.setFocusPainted(false);
             btn.setBorder(BorderFactory.createLineBorder(warnaGaris, 1));
             add(btn); // Masukkan ke dalam panel grafik
@@ -165,9 +169,9 @@ public class GraphPanel extends JPanel {
                 int h = getHeight();
 
                 // Pojok Kanan Atas (Kontrol Zoom)
-                btnZoomIn.setBounds(w - 120, 20, 30, 30);
-                btnZoomOut.setBounds(w - 85, 20, 30, 30);
-                btnResetZoom.setBounds(w - 50, 20, 30, 30);
+                btnZoomIn.setBounds(w - 125, 20, 35, 35);
+                btnZoomOut.setBounds(w - 85, 20, 35, 35);
+                btnResetZoom.setBounds(w - 45, 20, 35, 35);
 
                 // Pojok Kanan Bawah (Tombol Export MD)
                 btnExportMd.setBounds(w - 220, h - 50, 200, 32);

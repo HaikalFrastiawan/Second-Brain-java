@@ -1,6 +1,5 @@
 package view;
 
-
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -50,7 +49,6 @@ import command.DeleteNoteCommand;
 import model.Catatan;
 import repository.CatatanRepository;
 
-
 public class MainFrame extends JFrame {
 
     private JTable tabelCatatan;
@@ -67,7 +65,7 @@ public class MainFrame extends JFrame {
     private RoundedButton btnClear;
     private RoundedButton btnUndo;
     private RoundedButton btnRedo;
-    
+
     // FITUR BARU: Untuk Undo/Redo
     private Deque<Command> undoStack = new ArrayDeque<>();
     private Deque<Command> redoStack = new ArrayDeque<>();
@@ -124,8 +122,15 @@ public class MainFrame extends JFrame {
     private void applyModernStyling(JComponent component, Border defaultBorder, Border focusBorder) {
         component.setBorder(defaultBorder);
         component.addFocusListener(new FocusAdapter() {
-            @Override public void focusGained(FocusEvent e) { component.setBorder(focusBorder); }
-            @Override public void focusLost(FocusEvent e) { component.setBorder(defaultBorder); }
+            @Override
+            public void focusGained(FocusEvent e) {
+                component.setBorder(focusBorder);
+            }
+
+            @Override
+            public void focusLost(FocusEvent e) {
+                component.setBorder(defaultBorder);
+            }
         });
     }
 
@@ -137,18 +142,18 @@ public class MainFrame extends JFrame {
                 return false;
             }
         };
-        
+
         tabelCatatan = new JTable(tableModel);
         tabelCatatan.setAutoCreateRowSorter(true);
 
         // --- Kustomisasi Form Input Modern ---
         Border defaultBorder = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(BORDER_MUTED, 1),
-            BorderFactory.createEmptyBorder(5, 8, 5, 8)
+                BorderFactory.createLineBorder(BORDER_MUTED, 1),
+                BorderFactory.createEmptyBorder(5, 8, 5, 8)
         );
         Border focusBorder = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(ACCENT_CYAN_FOCUS, 1),
-            BorderFactory.createEmptyBorder(5, 8, 5, 8)
+                BorderFactory.createLineBorder(ACCENT_CYAN_FOCUS, 1),
+                BorderFactory.createEmptyBorder(5, 8, 5, 8)
         );
 
         txtCari = new JTextField();
@@ -204,12 +209,22 @@ public class MainFrame extends JFrame {
         btnHapus.setBackground(ACCENT_RED);
 
         // FITUR BARU: Tombol Undo/Redo
-        btnUndo = new RoundedButton("↩ Undo");
+        btnUndo = new RoundedButton("");
         btnUndo.setBackground(BG_SURFACE);
         btnUndo.setEnabled(false);
-        btnRedo = new RoundedButton("↪ Redo");
+        btnRedo = new RoundedButton("");
         btnRedo.setBackground(BG_SURFACE);
         btnRedo.setEnabled(false);
+
+        // SOLUSI BUG: Mencegah tombol mengambil fokus saat diklik.
+        btnUndo.setFocusable(false);
+        btnRedo.setFocusable(false);
+
+        // Menggunakan emoji secara langsung, tidak perlu file gambar.
+        btnUndo.setText("↩️ Undo");
+        btnRedo.setText("↪️ Redo");
+        btnUndo.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 12));
+        btnRedo.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 12));
 
         // --- Kustomisasi Tabel Futuristik ---
         tabelCatatan.setBackground(BG_MAIN);
@@ -225,7 +240,7 @@ public class MainFrame extends JFrame {
         tabelCatatan.getTableHeader().setForeground(TEXT_MAIN);
         tabelCatatan.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
         tabelCatatan.getTableHeader().setBorder(BorderFactory.createLineBorder(BORDER_MUTED));
-        
+
         // Pindahkan pengaturan renderer ke sini agar hanya diatur sekali.
         // Ini memperbaiki ClassCastException dan inefisiensi.
         tabelCatatan.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
@@ -257,19 +272,21 @@ public class MainFrame extends JFrame {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new java.awt.Insets(6, 4, 6, 4);
 
-        // Judul Logs Aplikasi
-        JLabel lblApp = new JLabel("📊 Second Brain Logs", JLabel.LEFT);
-        lblApp.setFont(new Font("Segoe UI", Font.BOLD, 20));
-        lblApp.setForeground(Color.WHITE);
+        // Logo Aplikasi di paling atas
+        JLabel lblLogo = new JLabel("Second Brain");
+        lblLogo.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        lblLogo.setForeground(TEXT_MAIN);
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.gridwidth = 2;
-        gbc.insets = new java.awt.Insets(0, 4, 15, 4);
-        panelKiri.add(lblApp, gbc);
+        gbc.insets = new java.awt.Insets(0, 4, 15, 4); // Beri jarak bawah
+        panelKiri.add(lblLogo, gbc);
 
         // Panel Undo/Redo
+        gbc.gridx = 0;
         gbc.gridy = 1;
-        gbc.insets = new java.awt.Insets(0, 4, 10, 4);
+        gbc.gridwidth = 2;
+        gbc.insets = new java.awt.Insets(0, 4, 10, 4); // Reset jarak
         JPanel panelUndoRedo = new JPanel(new GridLayout(1, 2, 10, 0));
         panelUndoRedo.setOpaque(false);
         panelUndoRedo.add(btnUndo);
@@ -329,7 +346,6 @@ public class MainFrame extends JFrame {
         gbc.gridwidth = 2;
         gbc.weighty = 0.8;
         gbc.fill = GridBagConstraints.BOTH;
-        
 
         // Barisan Tombol Aksi di Bawah
         gbc.weighty = 0;
@@ -359,9 +375,9 @@ public class MainFrame extends JFrame {
         JPanel panelTengah = new JPanel(new BorderLayout());
         panelTengah.setOpaque(false);
 
-        btnTogglePanel = new RoundedButton("◀");
-        btnTogglePanel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        btnTogglePanel = new RoundedButton("⬅️");
         btnTogglePanel.setBackground(BG_SURFACE);
+        btnTogglePanel.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 16));
         JPanel toggleContainer = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         toggleContainer.setOpaque(false);
         toggleContainer.add(btnTogglePanel);
@@ -384,7 +400,7 @@ public class MainFrame extends JFrame {
                     // Konversi view index ke model index jika ada sorting
                     int modelRow = tabelCatatan.convertRowIndexToModel(selectedRow);
                     String id = tableModel.getValueAt(modelRow, 0).toString();
-                    
+
                     // Panggil metode sinkronisasi yang sudah ada
                     setSelectedId(id);
                 }
@@ -405,17 +421,17 @@ public class MainFrame extends JFrame {
             try {
                 if (selectedId == null) {
                     // Aksi CREATE
-                   String newId = null;
-                   Catatan catatanBaru = new Catatan(newId, judul, konten, kategori, null, 0, 0); 
-    
-    executeCommand(new CreateNoteCommand(catatanBaru, repo, this));
+                    String newId = null;
+                    Catatan catatanBaru = new Catatan(newId, judul, konten, kategori, null, 0, 0);
+
+                    executeCommand(new CreateNoteCommand(catatanBaru, repo, this));
                 } else {
                     // Aksi UPDATE
                     Catatan catatanLama = repo.getCatatanById(selectedId);
                     if (catatanLama != null) {
                         Catatan catatanBaru = new Catatan(
-                            selectedId, judul, konten, kategori, catatanLama.getTanggal(),
-                            catatanLama.getKoordinatX(), catatanLama.getKoordinatY()
+                                selectedId, judul, konten, kategori, catatanLama.getTanggal(),
+                                catatanLama.getKoordinatX(), catatanLama.getKoordinatY()
                         );
                         executeCommand(new UpdateNoteCommand(catatanLama, catatanBaru, repo, this));
                     }
@@ -490,38 +506,51 @@ public class MainFrame extends JFrame {
         btnUndo.addActionListener(e -> {
             if (!undoStack.isEmpty()) {
                 Command command = undoStack.pop();
-                if (command.undo()) {
-                    redoStack.push(command);
-                    refreshData();
-                }
+                command.undo(); // Jalankan pembatalan aksi
+                redoStack.push(command); // Pindahkan ke tumpukan redo
+                refreshData();
+                updateUndoRedoButtons();
             }
         });
 
+// Event Tombol Redo
         btnRedo.addActionListener(e -> {
             if (!redoStack.isEmpty()) {
                 Command command = redoStack.pop();
+
+                // 🚨 JALANKAN VIA HELPER METHOD UTAMA AGAR UI SINKRON
                 if (command.execute()) {
-                    undoStack.push(command);
+                    undoStack.push(command); // Pindahkan kembali ke tumpukan undo
+
+                    // Segarkan UI secara menyeluruh
+                    bersihkanForm();
                     refreshData();
+
+                    // Paksa JTable / UI merender ulang dari awal
+                    if (this.getContentPane() != null) {
+                        this.getContentPane().revalidate();
+                        this.getContentPane().repaint();
+                    }
                 }
+
+                updateUndoRedoButtons();
             }
         });
     }
-
-    /**
-     * FITUR BARU: Menjalankan sebuah command dan menyimpannya ke undo stack.
-     */
+        /**
+         * FITUR BARU: Menjalankan sebuah command dan menyimpannya ke undo
+         * stack.
+         */
     private void executeCommand(Command command) {
         if (command.execute()) {
             undoStack.push(command);
-            redoStack.clear(); // Aksi baru akan menghapus histori redo
+            redoStack.clear(); // Aksi baru akan menghapus histori  redo
             refreshData();
             updateUndoRedoButtons();
         } else {
             JOptionPane.showMessageDialog(this, "Aksi gagal dieksekusi.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
-
 
     /**
      * FITUR BARU: Mengontrol animasi slide-in/slide-out untuk panel kiri.
@@ -535,8 +564,8 @@ public class MainFrame extends JFrame {
 
         Timer timer = new Timer(delay, null);
         timer.addActionListener(e -> {
-            long elapsedTime = System.currentTimeMillis() - ((Timer)e.getSource()).getInitialDelay();
-            float progress = Math.min(1.0f, (float)elapsedTime / animationDuration);
+            long elapsedTime = System.currentTimeMillis() - ((Timer) e.getSource()).getInitialDelay();
+            float progress = Math.min(1.0f, (float) elapsedTime / animationDuration);
 
             // Efek easing (ease-out)
             progress = (float) (1 - Math.pow(1 - progress, 3));
@@ -546,9 +575,9 @@ public class MainFrame extends JFrame {
             panelKiri.revalidate(); // Hitung ulang layout
 
             if (progress == 1.0f) {
-                ((Timer)e.getSource()).stop();
+                ((Timer) e.getSource()).stop();
                 isPanelKiriVisible = !isPanelKiriVisible;
-                btnTogglePanel.setText(isPanelKiriVisible ? "◀" : "▶");
+                btnTogglePanel.setText(isPanelKiriVisible ? "⬅️" : "➡️");
                 panelKiri.setVisible(isPanelKiriVisible); // Sembunyikan sepenuhnya di akhir
             }
         });
@@ -565,7 +594,6 @@ public class MainFrame extends JFrame {
         btnUndo.setEnabled(!undoStack.isEmpty());
         btnRedo.setEnabled(!redoStack.isEmpty());
     }
-
 
     // ==========================================
     //   PERBAIKAN UTAMA: SISTEM SINKRONISASI 2 ARAH
