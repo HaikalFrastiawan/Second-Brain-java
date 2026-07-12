@@ -14,6 +14,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Point2D;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -30,6 +31,9 @@ import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.Timer;
+import javax.swing.JPopupMenu;
+import javax.swing.JMenuItem;
+import javax.swing.SwingUtilities;
 
 import model.Catatan;
 import repository.CatatanRepository;
@@ -69,6 +73,10 @@ public class GraphPanel extends JPanel {
     private Map<String, ArrayList<GraphNode>> categoryGroups = new HashMap<>();
     private List<Link> explicitLinks = new ArrayList<>(); // FITUR BARU: Untuk link [[...]]
 
+    // FITUR BARU: Untuk menu klik kanan
+    private JPopupMenu contextMenu;
+    private Point2D.Double contextMenuClickPoint;
+
     // Constructor bawaan (urutan baru)
     public GraphPanel(CatatanRepository repo, MainFrame mainFrame) {
         this.repo = repo;
@@ -79,7 +87,34 @@ public class GraphPanel extends JPanel {
         setBackground(new Color(10, 10, 18));
         initControls();
         initMouseListeners();
+        initContextMenu(); // Inisialisasi menu klik kanan
         initGraphEngineTimer();
+    }
+
+    /**
+     * FITUR BARU: Menginisialisasi JPopupMenu untuk klik kanan.
+     */
+    private void initContextMenu() {
+        contextMenu = new JPopupMenu();
+        JMenuItem createItem = new JMenuItem("Buat Catatan Baru di Sini");
+        createItem.addActionListener(e -> {
+            String judul = JOptionPane.showInputDialog(
+                mainFrame,
+                "Masukkan judul untuk catatan baru:",
+                "Buat Catatan Baru",
+                JOptionPane.PLAIN_MESSAGE
+            );
+
+            if (judul != null && !judul.trim().isEmpty()) {
+                try {
+                    repo.simpan(judul, "", "", contextMenuClickPoint.getX(), contextMenuClickPoint.getY());
+                    mainFrame.refreshData();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(mainFrame, "Gagal menyimpan catatan baru.", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        contextMenu.add(createItem);
     }
 
     private void initControls() {
@@ -139,11 +174,6 @@ public class GraphPanel extends JPanel {
                 btnExportMd.setBounds(w - 220, h - 50, 200, 32);
             }
         });
-    }
-
-    // Overload Constructor untuk mendukung urutan pemanggilan di MainFrame lama Anda
-    public GraphPanel(MainFrame mainFrame, CatatanRepository repo) {
-        this(repo, mainFrame);
     }
 
     public void setSearchQuery(String query) {
@@ -559,6 +589,18 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
             @Override
             public void mousePressed(MouseEvent e) {
                 lastMousePosition = e.getPoint();
+                // FITUR BARU: Cek pemicu popup (klik kanan)
+                if (e.isPopupTrigger()) {
+                    showContextMenu(e);
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                // Cek pemicu popup saat mouse dilepas (best practice untuk cross-platform)
+                if (e.isPopupTrigger()) {
+                    showContextMenu(e);
+                }
             }
 
             @Override
@@ -566,7 +608,9 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
                 int cx = getWidth() / 2;
                 int cy = getHeight() / 2;
 
-                // 1. Buat ulang matriks transformasi yang persis sama dengan yang ada di paintComponent
+                // Jangan proses klik biasa jika itu adalah klik kanan
+                if (SwingUtilities.isRightMouseButton(e)) return;
+
                 java.awt.geom.AffineTransform tx = new java.awt.geom.AffineTransform();
                 tx.translate(cx, cy);
                 tx.scale(zoomFactor, zoomFactor);
@@ -576,7 +620,6 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
                 java.awt.geom.Point2D dstTransform = new java.awt.geom.Point2D.Double();
 
                 try {
-                    // 2. Minta Java menghitung balik koordinat klik layar ke koordinat dunia nyata si node
                     tx.inverseTransform(srcTransform, dstTransform);
 
                     double clickedX = dstTransform.getX();
@@ -637,6 +680,49 @@ public void SinkronkanNodes(List<Catatan> catatanList) {
             }
             repaint();
         });
+    }
+
+    /**
+     * FITUR BARU: Menampilkan menu konteks jika klik kanan dilakukan di area kosong.
+     */
+    private void showContextMenu(MouseEvent e) {
+        try {
+            // Konversi titik klik layar ke koordinat dunia (memperhitungkan zoom/pan)
+            int cx = getWidth() / 2;
+            int cy = getHeight() / 2;
+            AffineTransform tx = new AffineTransform();
+            tx.translate(cx, cy);
+            tx.scale(zoomFactor, zoomFactor);
+            tx.translate(-cx + offsetX, -cy + offsetY);
+
+            contextMenuClickPoint = new Point2D.Double();
+            tx.inverseTransform(e.getPoint(), contextMenuClickPoint);
+
+            // Hanya tampilkan menu jika tidak ada node yang diklik
+            if (findNodeAtPoint(contextMenuClickPoint) == null) {
+                contextMenu.show(e.getComponent(), e.getX(), e.getY());
+            }
+        } catch (java.awt.geom.NoninvertibleTransformException ex) {
+            // Abaikan jika transformasi tidak bisa dibalik
+        }
+    }
+
+    /**
+     * FITUR BARU: Helper untuk mencari node pada titik koordinat dunia.
+     */
+    private GraphNode findNodeAtPoint(Point2D worldPoint) {
+        double clickTolerance = 18.0;
+        for (GraphNode node : graphNodes) {
+            // Titik tengah node (ditambah 4 karena di paintComponent digambar dengan offset +4)
+            double dx = worldPoint.getX() - (node.x + 4);
+            double dy = worldPoint.getY() - (node.y + 4);
+            double distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance <= clickTolerance) {
+                return node;
+            }
+        }
+        return null;
     }
 private GraphNode cariNodeLama(String id) {
     if (graphNodes == null || id == null) {

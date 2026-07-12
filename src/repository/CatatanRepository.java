@@ -100,6 +100,22 @@ public class CatatanRepository {
         }
     }
 
+    public boolean simpan(String judul, String konten, String kategori, double x, double y) throws SQLException {
+        // CURDATE() untuk mendapatkan tanggal hari ini secara otomatis
+        String sql = "INSERT INTO catatan (judul, konten, kategori, tanggal_dibuat, koordinat_x, koordinat_y) VALUES (?, ?, ?, CURDATE(), ?, ?)";
+        try (Connection conn = Koneksi.configDB();
+             PreparedStatement pst = conn.prepareStatement(sql)) {
+            
+            pst.setString(1, judul);
+            pst.setString(2, konten);
+            pst.setString(3, kategori != null ? kategori.trim() : "");
+            pst.setInt(4, (int) x);
+            pst.setInt(5, (int) y);
+            
+            return pst.executeUpdate() > 0;
+        }
+    }
+
     public boolean hapus(String id) throws SQLException {
         String sql = "DELETE FROM catatan WHERE id_catatan = ?";
         try (Connection conn = Koneksi.configDB();

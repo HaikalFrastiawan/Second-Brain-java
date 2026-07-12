@@ -16,6 +16,8 @@ import java.awt.event.WindowEvent;
 import java.sql.SQLException;
 import java.util.List;
 
+import javax.swing.*;
+import java.awt.FlowLayout;
 import javax.swing.BorderFactory;
 import javax.swing.JComboBox;
 import javax.swing.JEditorPane;
@@ -29,6 +31,7 @@ import javax.swing.JTable;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.Timer;
 import javax.swing.border.Border;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
@@ -55,6 +58,11 @@ public class MainFrame extends JFrame {
     private RoundedButton btnSimpan;
     private RoundedButton btnHapus;
     private RoundedButton btnClear;
+
+    // FITUR BARU: Untuk animasi slide panel
+    private JPanel panelKiri;
+    private RoundedButton btnTogglePanel;
+    private boolean isPanelKiriVisible = true;
 
     private GraphPanel graphPanel;
     private CatatanRepository repo;
@@ -219,7 +227,7 @@ public class MainFrame extends JFrame {
         setLayout(new BorderLayout());
 
         // PANEL KIRI
-        JPanel panelKiri = new JPanel(new GridBagLayout());
+        panelKiri = new JPanel(new GridBagLayout());
         panelKiri.setPreferredSize(new Dimension(380, 700)); // Lebarkan sedikit
         panelKiri.setBackground(BG_MAIN);
         panelKiri.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
@@ -316,10 +324,28 @@ public class MainFrame extends JFrame {
         panelKiri.add(tabKonten, gbc);
 
         add(panelKiri, BorderLayout.WEST);
-        add(graphPanel, BorderLayout.CENTER);
+
+        // FITUR BARU: Panel Tengah yang berisi GraphPanel dan Tombol Toggle
+        JPanel panelTengah = new JPanel(new BorderLayout());
+        panelTengah.setOpaque(false);
+
+        btnTogglePanel = new RoundedButton("◀");
+        btnTogglePanel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        btnTogglePanel.setBackground(BG_SURFACE);
+        JPanel toggleContainer = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        toggleContainer.setOpaque(false);
+        toggleContainer.add(btnTogglePanel);
+
+        panelTengah.add(toggleContainer, BorderLayout.WEST);
+        panelTengah.add(graphPanel, BorderLayout.CENTER);
+
+        add(panelTengah, BorderLayout.CENTER);
     }
 
     private void initEvents() {
+        // FITUR BARU: Event untuk tombol toggle animasi panel
+        btnTogglePanel.addActionListener(e -> togglePanelKiri());
+
         // Event ketika baris tabel dipilih manual oleh user
         tabelCatatan.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -419,6 +445,41 @@ public class MainFrame extends JFrame {
                 graphPanel.simpanPosisiNode();
             }
         });
+    }
+
+    /**
+     * FITUR BARU: Mengontrol animasi slide-in/slide-out untuk panel kiri.
+     */
+    private void togglePanelKiri() {
+        int startWidth = panelKiri.getWidth();
+        int targetWidth = isPanelKiriVisible ? 0 : 380;
+        int animationDuration = 250; // dalam milidetik
+        int frameRate = 60;
+        int delay = 1000 / frameRate;
+
+        Timer timer = new Timer(delay, null);
+        timer.addActionListener(e -> {
+            long elapsedTime = System.currentTimeMillis() - ((Timer)e.getSource()).getInitialDelay();
+            float progress = Math.min(1.0f, (float)elapsedTime / animationDuration);
+
+            // Efek easing (ease-out)
+            progress = (float) (1 - Math.pow(1 - progress, 3));
+
+            int currentWidth = (int) (startWidth + (targetWidth - startWidth) * progress);
+            panelKiri.setPreferredSize(new Dimension(currentWidth, panelKiri.getHeight()));
+            panelKiri.revalidate(); // Hitung ulang layout
+
+            if (progress == 1.0f) {
+                ((Timer)e.getSource()).stop();
+                isPanelKiriVisible = !isPanelKiriVisible;
+                btnTogglePanel.setText(isPanelKiriVisible ? "◀" : "▶");
+                panelKiri.setVisible(isPanelKiriVisible); // Sembunyikan sepenuhnya di akhir
+            }
+        });
+
+        timer.setInitialDelay(0);
+        panelKiri.setVisible(true); // Pastikan terlihat selama animasi
+        timer.start();
     }
 
     // ==========================================
